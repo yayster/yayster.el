@@ -110,10 +110,12 @@ Try:
 
 Read-only capabilities auto-approve (`yayster-auto-approve-readonly`, default on).
 **Mutating capabilities always prompt** via `yayster-confirm-function`. The
-prompt includes the capability name and a truncated argument payload (so a rebind
-to `y-or-n-p` is not blind). On a graphical frame: **Allow**, **YOLO** (stop asking
-for the rest of the session; re-arm with `M-x yayster-safety-on`), and **Deny**.
-On a terminal: `*yayster-permission*` plus `[y]/[n]/[!]`. C-g / cancel is deny.
+prompt includes the capability name and the **full** argument payload — the
+command or elisp that will run, no truncation — so a rebind to `y-or-n-p` is
+not blind. The same text is shown in `*yayster-permission*`. On a graphical
+frame: **Allow**, **YOLO** (stop asking for the rest of the session; re-arm with
+`M-x yayster-safety-on`), and **Deny**. On a terminal: `[y]/[n]/[!]`. C-g /
+cancel is deny.
 `run_command` times out after `yayster-command-timeout` seconds (default 30) and
 caps output at `yayster-command-max-bytes`.
 
@@ -124,7 +126,8 @@ JSON ARGS is not a tool call.
 ## ⚠️ Safety
 
 Mutating tools (`eval_elisp`, `write_buffer`, `run_command`) **always prompt**
-(Allow / Deny). Default install is that gate — read the payload before you Allow.
+(Allow / Deny). The prompt shows the full command or elisp — no truncation.
+Default install is that gate — read the payload before you Allow.
 
 **YOLO** is opt-in and **session-scoped** until `M-x yayster-safety-on`. It is not
 the default. Demo the package with prompts on.

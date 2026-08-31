@@ -1,7 +1,7 @@
 ;;; yayster.el --- El Yayster: a resident LLM that inhabits Emacs -*- lexical-binding: t; -*-
 
 ;; Author: David Kayal
-;; Version: 0.2.0
+;; Version: 0.2.1
 ;; Package-Requires: ((emacs "28.1"))
 ;; SPDX-License-Identifier: MIT
 
@@ -75,9 +75,9 @@ Mutating capabilities ALWAYS prompt regardless of this setting."
 
 (defcustom yayster-confirm-function #'yayster--confirm
   "Function called with a PROMPT string to approve a mutating capability.
-Must return non-nil to approve.  The prompt already includes the capability
-name and a truncated argument payload, so a rebind to `y-or-n-p' is not
-blind.  The default also shows a GUI dialog on graphical frames."
+Must return non-nil to approve.  The prompt includes the capability name
+and the full argument payload (no truncation), so a rebind to `y-or-n-p'
+is not blind.  The default also shows a GUI dialog on graphical frames."
   :type 'function :group 'yayster)
 
 (defcustom yayster-use-dialog t
@@ -277,6 +277,16 @@ Session-scoped: stays set across turns until `\\[yayster-safety-on]'.")
   (unless noninteractive
     (message "El Yayster: safety re-armed — mutating actions will ask again.")))
 
+(defun yayster--show-permission (text)
+  "Show TEXT in *yayster-permission* so the full payload is inspectable."
+  (unless noninteractive
+    (with-current-buffer (get-buffer-create "*yayster-permission*")
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert text)
+        (goto-char (point-min))
+        (display-buffer (current-buffer))))))
+
 (defun yayster--confirm (prompt)
   "Approve or deny the pending action described by PROMPT.
 Return non-nil to allow.
@@ -284,59 +294,45 @@ Details come from `yayster--pending-detail'.  On a graphical frame
 \(when `yayster-use-dialog') this pops a GUI dialog box with
 Allow / YOLO / Deny; otherwise it shows the action in *yayster-permission*
 and asks in the minibuffer.
+The permission buffer is filled with the full payload before the prompt
+so you can review exactly what will execute.
 YOLO approves this action AND sets `yayster--yolo' so further
 mutating actions auto-approve until you run `\\[yayster-safety-on]'.
 Closing, cancelling, or C-g counts as a denial."
   (let* ((detail yayster--pending-detail)
-         (full (if detail (concat prompt "\n\n" detail) prompt))
-         (choice
-          (if (and yayster-use-dialog (display-graphic-p) (not noninteractive))
-              (condition-case nil
-                  (let ((last-nonmenu-event nil))  ; force a real dialog, not an echo
-                    (x-popup-dialog
-                     t (list full
-                             '("Allow" . allow)
-                             '("YOLO — stop asking" . yolo)
-                             '("Deny" . deny))))
-                (quit 'deny))                        ; ESC / close = deny
-            ;; Terminal / fallback: mirror to a buffer, ask with a 3-way key read.
-            (progn
-              (when (and detail (not noninteractive))
-                (with-current-buffer (get-buffer-create "*yayster-permission*")
-                  (erase-buffer) (insert full) (goto-char (point-min))
-                  (display-buffer (current-buffer))))
-              (if noninteractive 'deny
-                (condition-case nil
-                    (pcase (read-char-choice
-                            (concat prompt "  [y]es  [n]o  [!]YOLO: ") '(?y ?n ?!))
-                      (?y 'allow) (?! 'yolo) (_ 'deny))
-                  (quit 'deny)))))))
-    ;; Mirror to buffer for the GUI path too (dialog is transient).
-    (when (and detail (not noninteractive)
-               yayster-use-dialog (display-graphic-p))
-      (with-current-buffer (get-buffer-create "*yayster-permission*")
-        (erase-buffer) (insert full) (goto-char (point-min))))
-    (pcase choice
-      ('yolo (setq yayster--yolo t)
-             (yayster--log
-              ";; ⚡ YOLO engaged — auto-approving mutating actions. M-x yayster-safety-on to re-arm.")
-             t)
-      ('allow t)
-      (_ nil))))
-
-(defun yayster--truncate (s n)
-  "Return S truncated to N characters with a marker if needed."
-  (if (and (stringp s) (> (length s) n))
-      (concat (substring s 0 n) "\n… [truncated]")
-    s))
+         (full (if detail (concat prompt "\n\n" detail) prompt)))
+    (when detail (yayster--show-permission full))
+    (let ((choice
+           (if (and yayster-use-dialog (display-graphic-p) (not noninteractive))
+               (condition-case nil
+                   (let ((last-nonmenu-event nil))  ; force a real dialog, not an echo
+                     (x-popup-dialog
+                      t (list full
+                              '("Allow" . allow)
+                              '("YOLO — stop asking" . yolo)
+                              '("Deny" . deny))))
+                 (quit 'deny))                        ; ESC / close = deny
+             (if noninteractive 'deny
+               (condition-case nil
+                   (pcase (read-char-choice
+                           (concat prompt "  [y]es  [n]o  [!]YOLO: ") '(?y ?n ?!))
+                     (?y 'allow) (?! 'yolo) (_ 'deny))
+                 (quit 'deny))))))
+      (pcase choice
+        ('yolo (setq yayster--yolo t)
+               (yayster--log
+                ";; ⚡ YOLO engaged — auto-approving mutating actions. M-x yayster-safety-on to re-arm.")
+               t)
+        ('allow t)
+        (_ nil)))))
 
 (defun yayster--approved-p (cap args)
-  "Return non-nil if executing CAP with ARGS is permitted."
+  "Return non-nil if executing CAP with ARGS is permitted.
+The confirm prompt contains the full argument payload — no truncation."
   (cond
    ((and (not (yayster-cap-mutating cap)) yayster-auto-approve-readonly) t)
    (yayster--yolo t)
-   (t (let* ((payload (yayster--truncate
-                       (yayster--pp-args args) 4096))
+   (t (let* ((payload (yayster--pp-args args))
              (yayster--pending-detail
               (format "Capability: %s\n%s\n\n%s"
                       (yayster-cap-name cap) (yayster-cap-doc cap) payload))

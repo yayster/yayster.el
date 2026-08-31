@@ -62,6 +62,23 @@
           (should (string-match-p (regexp-quote "(+ 1 2)") prompt)))
       (setq yayster-confirm-function orig))))
 
+(ert-deftest yayster-confirm-prompt-is-not-truncated ()
+  "A payload longer than 4k is still shown in full on the confirm prompt."
+  (let* ((code (concat "(progn " (make-string 5000 ?x) ")"))
+         (prompt nil)
+         (yayster--yolo nil)
+         (orig yayster-confirm-function))
+    (unwind-protect
+        (progn
+          (setq yayster-confirm-function
+                (lambda (p) (setq prompt p) nil))
+          (yayster--execute "eval_elisp" (list :code code))
+          (should (stringp prompt))
+          (should (> (length prompt) 5000))
+          (should (string-match-p (regexp-quote code) prompt))
+          (should-not (string-match-p "truncated" prompt)))
+      (setq yayster-confirm-function orig))))
+
 (ert-deftest yayster-finish-is-idempotent ()
   (let ((yayster--busy t)
         (yayster--turn-prompt 0)
