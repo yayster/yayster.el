@@ -300,7 +300,7 @@ YOLO approves this action AND sets `yayster--yolo' so further
 mutating actions auto-approve until you run `\\[yayster-safety-on]'.
 Closing, cancelling, or C-g counts as a denial."
   (let* ((detail yayster--pending-detail)
-         (full (if detail (concat prompt "\n\n" detail) prompt)))
+         (full (if detail (concat detail "\n\n" prompt) prompt)))
     (when detail (yayster--show-permission full))
     (let ((choice
            (if (and yayster-use-dialog (display-graphic-p) (not noninteractive))
@@ -328,14 +328,16 @@ Closing, cancelling, or C-g counts as a denial."
 
 (defun yayster--approved-p (cap args)
   "Return non-nil if executing CAP with ARGS is permitted.
-The confirm prompt contains the full argument payload — no truncation."
+The confirm prompt contains the full argument payload — no truncation.
+The payload appears once, in the prompt; the pending detail is only the
+capability header."
   (cond
    ((and (not (yayster-cap-mutating cap)) yayster-auto-approve-readonly) t)
    (yayster--yolo t)
    (t (let* ((payload (yayster--pp-args args))
              (yayster--pending-detail
-              (format "Capability: %s\n%s\n\n%s"
-                      (yayster-cap-name cap) (yayster-cap-doc cap) payload))
+              (format "Capability: %s\n%s"
+                      (yayster-cap-name cap) (yayster-cap-doc cap)))
              (prompt (format "Allow %s?\n%s" (yayster-cap-name cap) payload)))
         (funcall yayster-confirm-function prompt)))))
 
